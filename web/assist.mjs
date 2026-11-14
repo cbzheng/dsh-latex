@@ -4,6 +4,16 @@
 const LINES=200;
 const numbered=(text,from=1,to)=>{const lines=text.split('\n'),first=Math.max(1,from|0||1),last=Math.min(lines.length,to||first+LINES-1,first+399);return {fromLine:first,toLine:last,lineCount:lines.length,text:lines.slice(first-1,last).map((l,i)=>first+i+'| '+l).join('\n')};};
 const subjectKey=(projectId,path)=>('latex-studio:'+projectId+':'+path).slice(0,900);
+// Index of the first of the expected whole lines. Earlier accepted changes in the same file move
+// later ones, so a miss at the given numbers falls back to the nearest exact match by content.
+export function locateLines(lines,args){
+ const want=String(args.expected).split('\n'),same=i=>i>=0&&i+want.length<=lines.length&&want.every((line,k)=>lines[i+k]===line);
+ if(args.to_line>=args.from_line&&args.to_line-args.from_line+1===want.length&&same(args.from_line-1))return args.from_line-1;
+ if(!args.expected)return -1;
+ let best=-1;
+ for(let i=0;i+want.length<=lines.length;i++)if(same(i)&&(best<0||Math.abs(i-(args.from_line-1))<Math.abs(best-(args.from_line-1))))best=i;
+ return best;
+}
 
 /**
  * env: {live, editor, request, flush, loadFile, refreshFiles, readOnly, t}
@@ -72,17 +82,22 @@ export function latexAssistProvider(kit,env){
  const extraActions=[
   {name:'create_file',description:'Create a new text file in this project (fails if it exists). Undo removes it only while unchanged. Add \\input/\\include separately if needed.',
    parameters:o({path,text:text(32000)},['path','text']),
+   // Shown in the host's review as a new file's whole text.
+   describe:args=>({kind:'text',label:args.path,anchor:'file:'+args.path,arg:['text'],before:'',after:args.text}),
    async apply(args,s){const saved=await request('write',{projectId:s.projectId,path:args.path,text:args.text,baseRevision:null});await env.refreshFiles();return {projectId:s.projectId,path:args.path,revision:saved.revision};},
    async undo(r){if(live.file?.path===r.path&&live.project?.id===r.projectId){if(!await env.flush())throw changed;await env.loadFile(live.project.main);}await request('remove-created',r).catch(e=>{throw e.status===409?changed:e;});await env.refreshFiles();}},
   {name:'edit_file',description:'Replace whole lines from_line..to_line of another project file (not the captured file; use replace_lines there). expected must equal those lines exactly; read them first.',
    parameters:o({path,from_line:line,to_line:line,expected:text(32000),text:text(32000)},['path','from_line','to_line','expected','text']),
+   // One reviewable change per passage: the file path groups them, the expected lines are the "before".
+   describe:args=>({kind:'text',label:args.path,anchor:'file:'+args.path+':'+args.from_line,arg:['text'],before:args.expected,after:args.text}),
    async apply(args,s){
     if(args.path===s.path)throw Error('请用 replace_lines 修改当前文件。 / Use replace_lines for the captured file.');
     if(live.file?.path===args.path&&!await env.flush())throw changed;
     const current=await request('read',{projectId:s.projectId,path:args.path}),lines=current.text.split('\n');
-    if(args.to_line<args.from_line||args.to_line>lines.length)throw Error('行号超出文件范围。 / Line range is outside the file.');
-    if(lines.slice(args.from_line-1,args.to_line).join('\n')!==args.expected)throw Error('这些行已有变化，请重新读取。 / Those lines changed; read them again.');
-    lines.splice(args.from_line-1,args.to_line-args.from_line+1,...args.text.split('\n'));
+    const at=locateLines(lines,args);
+    if(at<0&&args.to_line>lines.length)throw Error('行号超出文件范围。 / Line range is outside the file.');
+    if(at<0)throw Error('这些行已有变化，请重新读取。 / Those lines changed; read them again.');
+    lines.splice(at,args.expected.split('\n').length,...args.text.split('\n'));
     const saved=await writeFile(s.projectId,args.path,lines.join('\n'),current.revision);
     return {projectId:s.projectId,path:args.path,before:current.text,revision:saved.revision};
    },

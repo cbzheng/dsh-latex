@@ -5,7 +5,7 @@ import {join} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Studio} from '../src/service.mjs';
 import {diagnostics} from '../src/assist.mjs';
-import {latexAssistProvider} from '../web/assist.mjs';
+import {latexAssistProvider,locateLines} from '../web/assist.mjs';
 
 const MAIN='\\documentclass{article}\n\\usepackage{amsmath,graphicx}\n\\newcommand{\\method}{SynthNet}\n\\newcommand\\score[1]{#1}\n\\begin{document}\n\\section{Intro}\nAlpha line.\n% \\usepackage{ignored}\n\\input{body}\n\\bibliography{refs}\n\\end{document}\n';
 async function fixture(t){
@@ -85,9 +85,22 @@ test('the In-place AI provider declares bounded reads, navigation and file actio
  assert.deepEqual(calls.find(c=>c[0]==='write')[1],{projectId:'p',path:'body.tex',text:'x\nY',baseRevision:'other-r'});
  await assert.rejects(config.extraActions[1].undo(receipt,s),/changed/,'undo refuses a file changed afterwards');
  const made=await config.extraActions[0].apply({path:'new.tex',text:'New'},s);assert.deepEqual(made,{projectId:'p',path:'new.tex',revision:'w1'});
+ // Review display: other-file edits and new files are shown as before/after text under their path.
+ assert.deepEqual(config.extraActions[1].describe({path:'body.tex',from_line:2,to_line:2,expected:'y',text:'Y'}),{kind:'text',label:'body.tex',anchor:'file:body.tex:2',arg:['text'],before:'y',after:'Y'});
+ assert.deepEqual(config.extraActions[0].describe({path:'new.tex',text:'New'}),{kind:'text',label:'new.tex',anchor:'file:new.tex',arg:['text'],before:'',after:'New'});
  live.conflict=true;assert.equal(config.describe(s).readOnly,true,'a save conflict disables AI writes');
  // The Next Space assist protocol rejects unbounded or >32000 strings ("Bounded strings required").
  const strings=[];const walk=v=>{if(Array.isArray(v))v.forEach(walk);else if(v&&typeof v==='object'){if(v.type==='string')strings.push(v.maxLength);Object.values(v).forEach(walk);}};
  walk([config.extraActions,info.reads,info.navigation].map(list=>list.map(a=>a.parameters)));
  assert.ok(strings.length>3&&strings.every(n=>Number.isInteger(n)&&n<=32000),'every declared string is bounded by 32000: '+strings);
+});
+
+test('other-file edits are found by content after earlier changes moved their lines',()=>{
+ const lines=['a','b','target','d','target','f'];
+ assert.equal(locateLines(lines,{from_line:3,to_line:3,expected:'target'}),2,'exact numbers win');
+ assert.equal(locateLines(lines,{from_line:4,to_line:4,expected:'target'}),2,'a miss falls back to the nearest match');
+ assert.equal(locateLines(lines,{from_line:6,to_line:6,expected:'target'}),4);
+ assert.equal(locateLines(lines,{from_line:1,to_line:2,expected:'b\ntarget'}),1,'multi-line passages match as whole lines');
+ assert.equal(locateLines(lines,{from_line:3,to_line:3,expected:'targ'}),-1,'partial lines never match');
+ assert.equal(locateLines(lines,{from_line:9,to_line:9,expected:''}),-1);
 });
