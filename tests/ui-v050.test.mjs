@@ -46,3 +46,10 @@ test('projects default to a five-minute build interval and validate changes',asy
  await assert.rejects(projects.configure(p.id,{compileInterval:500}),/0–120/);
  await assert.rejects(projects.configure(p.id,{compileInterval:2.5}),/0–120/);
 });
+
+test('inside a host window the stylesheet drops nested backdrop blur',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const css=await readFile(new URL('../web/style.css',import.meta.url),'utf8');
+ assert.match(css,/:is\(\.ls-root\[data-host=window\],\.ls-headerbar\)\[class\] \{ --ls-blur:none; --ls-glass:var\(--ls-glass-strong\) \}/);
+ for(const rule of css.match(/backdrop-filter:[^;}]+/g))assert.match(rule,/backdrop-filter:\s*(var\(--ls-blur\)|none)/,rule);
+});

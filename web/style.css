@@ -44,6 +44,11 @@
  }
 }
 
+/* Inside a host window (e.g. a desktop shell) the window already supplies glass.
+   Nested backdrop-filters there exhaust GPU compositing in Chromium/Electron on
+   Retina screens (black tiles), so LaTeX Studio uses near-opaque surfaces. */
+:is(.ls-root[data-host=window],.ls-headerbar)[class] { --ls-blur:none; --ls-glass:var(--ls-glass-strong) }
+
 /* Base */
 .ls-root { display:flex; flex-direction:column; position:relative; isolation:isolate; height:100%; min-height:300px; min-width:0; flex:1; container:ls-root/inline-size;
  color:var(--ls-ink); background:var(--ls-backdrop); font:13.5px/1.5 var(--ls-font); -webkit-font-smoothing:antialiased; overflow:hidden; color-scheme:light }
