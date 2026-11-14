@@ -53,3 +53,24 @@ test('inside a host window the stylesheet drops nested backdrop blur',async()=>{
  assert.match(css,/:is\(\.ls-root\[data-host=window\],\.ls-headerbar\)\[class\] \{ --ls-blur:none; --ls-glass:var\(--ls-glass-strong\) \}/);
  for(const rule of css.match(/backdrop-filter:[^;}]+/g))assert.match(rule,/backdrop-filter:\s*(var\(--ls-blur\)|none)/,rule);
 });
+
+test('optional host render hints pause covered PDF painting and trim background page bitmaps',async()=>{
+ const {readFile}=await import('node:fs/promises');
+ const source=await readFile(new URL('../web/client.mjs',import.meta.url),'utf8');
+ const body=source.match(/const syncPainting=\(\)=>\{([^]*?)\n \};/)?.[1];assert.ok(body,'shipped hint handler');
+ const run=(hint,active=true)=>{
+  const calls={},live={active,renderHints:hint===undefined?undefined:{get:()=>hint}},pdf={current:{setActive:value=>{calls.active=value;},setResidentLimit:value=>{calls.limit=value;}}};
+  new Function('live','pdf',body)(live,pdf);return calls;
+ };
+ assert.deepEqual(run(undefined),{active:true,limit:7},'a host without hints behaves as before');
+ assert.deepEqual(run({visibility:'focused',quality:'full'}),{active:true,limit:7});
+ assert.deepEqual(run({visibility:'occluded',quality:'full'}),{active:false,limit:7});
+ assert.deepEqual(run({visibility:'hidden',quality:'reduced'}),{active:false,limit:3});
+ assert.deepEqual(run({visibility:'visible',quality:'reduced'}),{active:true,limit:3});
+ assert.deepEqual(run({visibility:'focused',quality:'reduced'}),{active:true,limit:7},'the focused window keeps its pages');
+ assert.deepEqual(run({visibility:'visible',quality:'full'},false),{active:false,limit:7},'the existing active state still wins');
+ // An older viewer build without the budget method must not break.
+ const live={active:true,renderHints:{get:()=>({visibility:'visible',quality:'reduced'})}},seen=[];
+ new Function('live','pdf',body)(live,{current:{setActive:value=>seen.push(value)}});assert.deepEqual(seen,[true]);
+ assert.match(source,/return renderHints\?\.subscribe\?\.\(syncPainting\);/);
+});

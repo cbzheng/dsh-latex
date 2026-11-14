@@ -133,6 +133,19 @@ test('a hidden host window does not start painting new pages, and resumes at its
  }finally{viewer.destroy();await viewer.whenIdle();}
 });
 
+test('a host under rendering pressure can lower the resident page budget and restore it',async()=>{
+ const fixture=await mounted({count:50}),{viewer,parent}=fixture;
+ try{
+  await scrollTo(fixture,20);assert.equal(viewer.stats().maxResident,7);
+  viewer.setResidentLimit(3);await tick();await viewer.whenIdle();
+  assert.equal(viewer.stats().maxResident,3);assert.ok(viewer.stats().resident<=3);assert.ok(rendered(parent).length<=3);
+  await scrollTo(fixture,35);assert.ok(viewer.stats().resident<=3);
+  viewer.setResidentLimit(1);assert.equal(viewer.stats().maxResident,2,'never below a usable minimum');
+  viewer.setResidentLimit('unknown');assert.equal(viewer.stats().maxResident,7);viewer.setResidentLimit(99);assert.equal(viewer.stats().maxResident,7);
+  await tick();await viewer.whenIdle();assert.ok(viewer.stats().resident<=7);assert.deepEqual(fixture.errors,[]);
+ }finally{viewer.destroy();await viewer.whenIdle();}
+});
+
 test('drawing stays detached until completion and finished bitmap ownership is released on teardown',async()=>{
  const doc=new Document(),parent=doc.createElement('section'),fixture=syntheticPDF({count:4}),surfaces=[],bitmaps=[];
  const create=doc.createElement.bind(doc);doc.createElement=name=>{

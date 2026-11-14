@@ -1,7 +1,7 @@
 import {createRenderQueue,pageWindow,capturePosition,restorePosition} from './pdf-queue.mjs';
 import {createRenderPacer} from './pdf-pacer.mjs';
 
-const MAX_RESIDENT_PAGES=7,MAX_CANVAS_PIXELS=4_000_000;
+const MAX_RESIDENT_PAGES=7,MIN_RESIDENT_PAGES=2,MAX_CANVAS_PIXELS=4_000_000;
 const owners=new WeakMap(),positions=new WeakMap();
 const clampScale=value=>Math.max(0.35,Math.min(3,value));
 const resourceKey=(url,doc)=>{try{const key=new URL(url,doc.baseURI||globalThis.location?.href);key.searchParams.delete('jobId');return key.href;}catch{return url;}};
@@ -19,7 +19,7 @@ export async function mountPDFWithLibrary(pdfjs,parent,url,{base,onJump,onError,
  owners.set(parent,owner);
  pdfjs.GlobalWorkerOptions.workerSrc=base+'pdf.worker.mjs';
  const loading=pdfjs.getDocument({url,cMapUrl:base+'cmaps/',cMapPacked:true,standardFontDataUrl:base+'standard_fonts/',wasmUrl:base+'wasm/'});
- const pages=[],resident=new Set();let pdf,disposed=false,scale=1,generation=0,queue,frame,resizeObserver,active=true,readingPosition=null;
+ const pages=[],resident=new Set();let pdf,disposed=false,scale=1,generation=0,queue,frame,resizeObserver,active=true,readingPosition=null,residentLimit=MAX_RESIDENT_PAGES;
  const pacer=createRenderPacer({onPause:paused=>queue?.setPaused(paused)});
  const requestFrame=view.requestAnimationFrame?.bind(view)||(callback=>setTimeout(callback,16));
  const cancelFrame=view.cancelAnimationFrame?.bind(view)||clearTimeout;
@@ -31,7 +31,7 @@ export async function mountPDFWithLibrary(pdfjs,parent,url,{base,onJump,onError,
  const position=()=>pages.length?capturePosition(pages.length,bounds,parent.scrollTop,parent.clientHeight,scale,parent.scrollLeft):null;
  const stats=(readPosition=true)=>({...(queue?.stats()||{active:0,queued:0}),pages:pages.length,resident:resident.size,
   canvasBytes:[...resident].reduce((total,record)=>total+(record.operation?.canvas?.width||0)*(record.operation?.canvas?.height||0)*4,0),
-  scale,position:readPosition?position():readingPosition,generation,disposed,maxResident:MAX_RESIDENT_PAGES,maxCanvasPixels:MAX_CANVAS_PIXELS});
+  scale,position:readPosition?position():readingPosition,generation,disposed,maxResident:residentLimit,maxCanvasPixels:MAX_CANVAS_PIXELS});
  const notify=()=>{
   if(!owns())return;const value=stats(false);
   const attributes={pdfActive:String(value.active),pdfQueued:String(value.queued),pdfResident:String(value.resident),pdfCanvasBytes:String(value.canvasBytes),pdfPage:String(value.position?.page||1),pdfPaused:String(pacer.paused)};
@@ -60,10 +60,10 @@ export async function mountPDFWithLibrary(pdfjs,parent,url,{base,onJump,onError,
   readingPosition=position();
   const window=pageWindow(pages.length,bounds,parent.scrollTop,parent.clientHeight,{preload:0}),protectedPages=selected();
   // Selected text layers consume the same bounded cache budget as other pages.
-  const slots=Math.max(0,MAX_RESIDENT_PAGES-protectedPages.size);
+  const slots=Math.max(0,residentLimit-protectedPages.size);
   const targets=window.render.map(index=>pages[index]).filter(record=>!protectedPages.has(record)).slice(0,slots);
   const keep=new Set(protectedPages);
-  for(const record of [...targets,...window.retain.map(index=>pages[index])])if(keep.size<MAX_RESIDENT_PAGES)keep.add(record);
+  for(const record of [...targets,...window.retain.map(index=>pages[index])])if(keep.size<residentLimit)keep.add(record);
   for(const record of resident)if(!keep.has(record))release(record);
   const wanted=[...protectedPages,...targets].filter(record=>record.status!=='ready'&&record.status!=='error');
   queue.update(wanted.map((record,priority)=>({id:record.queueKey,priority})));notify();
@@ -167,6 +167,8 @@ export async function mountPDFWithLibrary(pdfjs,parent,url,{base,onJump,onError,
   },
   jump({page,y=0}){if(disposed)return;const record=pages[Number(page)-1];if(record){parent.scrollTop=record.top+Math.max(0,Number(y)||0)*scale-Math.min(100,parent.clientHeight/4);reconcile();}},
   setActive(value){active=Boolean(value);visibility();if(active)schedule();},
+  // A host under rendering pressure can lower how many page bitmaps stay in memory.
+  setResidentLimit(value){const next=Math.max(MIN_RESIDENT_PAGES,Math.min(MAX_RESIDENT_PAGES,Math.round(Number(value))||MAX_RESIDENT_PAGES));if(disposed||next===residentLimit)return;residentLimit=next;schedule();},
   stats,position,whenIdle:()=>queue.whenIdle(),destroy:abort
  };
 }
