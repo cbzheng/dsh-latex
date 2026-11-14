@@ -3,6 +3,8 @@
 A quiet LaTeX writing workspace for DeepSeek Harness (DSH).
 Source on the left, PDF on the right, your paper stays an ordinary Git folder.
 
+![LaTeX Studio: source, outline and PDF preview](.github/readme/editor-light.png)
+
 - **Write**: CodeMirror editor with LaTeX highlighting, autosave with revision
   checks, and one-click bold, italic, itemize, enumerate and figure.
 - **Compile**: a private, checksum-pinned TinyTeX prepared on first use. Missing
@@ -17,6 +19,8 @@ Source on the left, PDF on the right, your paper stays an ordinary Git folder.
 - **Import**: open any folder (an Overleaf export works), create a new paper, or
   clone a GitHub repository with live progress.
 - **Look**: macOS-style glass interface in light and dark, usable on a phone.
+
+![Git view in dark mode: changes with inline diff and commit timeline](.github/readme/git-dark.png)
 
 AI integration (editing alongside an assistant on the open paper) is in progress
 and will be released later.
