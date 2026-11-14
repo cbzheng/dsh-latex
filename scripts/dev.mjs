@@ -1,0 +1,11 @@
+import {createServer} from 'node:http';
+import {readFile,mkdir} from 'node:fs/promises';
+import {resolve,join} from 'node:path';
+import {Studio,createHandler} from '../src/service.mjs';
+const root=resolve(import.meta.dirname,'..'),output=resolve(process.env.LATEX_BUILD_DIR||join(root,'dist'));
+const data=resolve(process.env.LATEX_STUDIO_DATA||join(root,'.private/dev'));await mkdir(data,{recursive:true});
+const studio=new Studio(data),handler=createHandler(studio,{assets:new URL('file://'+output+'/package/assets/')});
+const html=`<!doctype html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><base href="/"><style>html,body,#app{height:100%;margin:0}*{box-sizing:border-box}</style></head><body><div id="app"></div><script src="/react.js"></script><script src="/react-dom.js"></script><script>window.__ModuleLoader__={load({factory}){window.plugin=factory(id=>{if(id==='react')return React;if(id==='react-dom')return ReactDOM;throw Error(id)})}};</script><script src="/client.js"></script><script>const disposers=[];window.registered={};window.plugin.apply({effect(fn){const d=fn();if(d)disposers.push(d)},inject(){},slots:{inject(n,f){return f()},register(meta,view){window.registered[meta.name]=meta;if(meta.name==='main')ReactDOM.createRoot(document.getElementById('app')).render(view({}));return()=>{}}},layout:{selectPanel(){}}});</script></body></html>`;
+const reactBase=process.env.LATEX_REACT_DIR;if(!reactBase)throw Error('Set LATEX_REACT_DIR to a React 18 directory containing react/ and react-dom/');
+const server=createServer(async(req,res)=>{try{if(req.url.startsWith('/dsh-latex/'))return handler(req,res);const files={'/client.js':join(output,'package/client.js'),'/react.js':join(reactBase,'react/umd/react.production.min.js'),'/react-dom.js':join(reactBase,'react-dom/umd/react-dom.production.min.js')};res.setHeader('Content-Type',files[req.url]?'text/javascript':'text/html');res.end(files[req.url]?await readFile(files[req.url]):html);}catch(e){res.statusCode=500;res.end(e.message);}});
+server.listen(Number(process.env.PORT||18148),'127.0.0.1',()=>console.log('LaTeX Studio development server ready on loopback'));process.on('SIGTERM',()=>server.close());
