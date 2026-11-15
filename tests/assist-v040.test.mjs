@@ -76,9 +76,9 @@ test('the In-place AI provider declares bounded reads, navigation and file actio
  const info=config.describe(s);
  assert.deepEqual(info.subject,{key:'latex-studio:p:main.tex',locator:{projectId:'p',path:'main.tex'},revision:'r1'});
  assert.equal(info.standing.revision,'s1');assert.equal(info.context.build.phase,'error');
- assert.deepEqual(info.reads.map(r=>r.name),['read_file','search','outline','list_files','build_errors']);
- assert.deepEqual(info.navigation.map(r=>r.name),['open_file','show_line']);
- assert.deepEqual(config.extraActions.map(a=>a.name),['create_file','edit_file']);
+ assert.deepEqual(info.reads.map(r=>r.name),['read_file','search','outline','list_files','build_errors','git_status','git_diff']);
+ assert.deepEqual(info.navigation.map(r=>r.name),['open_file','show_line','compile']);
+ assert.deepEqual(config.extraActions.map(a=>a.name),['create_file','edit_file','rename_file','delete_file','set_main_file','set_engine']);
  assert.equal((await config.read('read_file',{path:'main.tex',from_line:2,to_line:2})).text,'2| b draft','open file reads include unsaved text');
  assert.deepEqual(await config.read('list_files',{}),{files:['main.tex']});
  await config.navigate('open_file',{path:'body.tex',line:4});assert.deepEqual(calls.at(-1),['load','body.tex',{line:4}]);
@@ -107,7 +107,7 @@ test('other-file edits are found by content after earlier changes moved their li
  assert.equal(locateLines(lines,{from_line:9,to_line:9,expected:''}),-1);
 });
 
-test('host review scrolls the open editor to a change without switching files',()=>{
+test('host review scrolls the open editor to a change; an unreadable file is not switched to',async()=>{
  let config;const kit={objectSchema:(properties,required)=>({type:'object',properties,required}),textSchema:n=>({type:'string',maxLength:n}),textRangeProvider:c=>(config=c,{version:1})};
  const calls=[],editor={},fake=(name,text)=>({getText:()=>text,view:{hasFocus:false,state:{selection:{main:{from:0,to:0}}}},show:(from,to)=>calls.push([name,'show',from,to]),jump:line=>calls.push([name,'jump',line]),replace(){},onUpdate:()=>()=>{},range(){}});
  editor.current=fake('main','a\nb\nc');
@@ -117,7 +117,7 @@ test('host review scrolls the open editor to a change without switching files',(
  const s=config.session();assert.equal(typeof s.show,'function');
  s.show(2,5);assert.deepEqual(calls,[['main','show',2,5]],'the session forwards the same offsets to its editor');
  const [create,edit]=config.extraActions;calls.length=0;
- assert.equal(edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),false,'a file that is not open stays docked');
+ assert.equal(await edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),false,'a file that cannot be read is not opened');
  assert.equal(create.show({path:'new.tex',text:'New'},s),false);
  assert.deepEqual(calls,[],'nothing scrolled and no file opened');
  // The edited file is now open in the editor (after open_file): applied, pending and moved changes.

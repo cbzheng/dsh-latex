@@ -12,8 +12,11 @@ Background AI (the latex_studio Agent tool) may only create revision-checked
 proposals; only a user's accept action applies them. Next Space In-place AI,
 started by the user on the open editor, may write directly within its declared
 actions: buffer edits are one undoable step saved with the normal revision check
-(a refused save rolls the AI text back); other-file edits and created files are
-revision-checked and undoable. Never silently overwrite an external edit or dirty editor.
+(a refused save rolls the AI text back); other-file edits, created, renamed and
+deleted files and the main-file/engine settings are revision-checked and undoable
+exactly (deletion only for UTF-8 text the undo can restore byte for byte).
+web/assist-coverage.json lists every interface operation and how the AI reaches it.
+Never silently overwrite an external edit or dirty editor.
 No credentials, paper contents, private paths, runtime archives or QA screenshots
 belong in Git. Tests use synthetic projects. Record development, verification
 and release readback in docs/private/operations.md (gitignored; this repository

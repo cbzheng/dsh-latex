@@ -19,7 +19,7 @@ export async function apply(ctx,config={}){
  });
  // Next Space verifies In-place AI edits by reading the saved file back on the Host.
  // Older Next Space releases do not know the readback kind; register without it there.
- const nativeView={version:1,id:'latex-studio',upstream:{package:'@cbzheng/dsh-latex',version:'0.5.4'},capabilities:['read-projects','latex_studio','review-ai-changes','local-git','managed-tex','in-place-ai'],data:[{label:'Registered LaTeX folders',service:'LaTeX Studio',uri:'dsh://latex-studio/projects'}],read:async()=>studio.projects.list()};
+ const nativeView={version:1,id:'latex-studio',upstream:{package:'@cbzheng/dsh-latex',version:'0.5.5'},capabilities:['read-projects','latex_studio','review-ai-changes','local-git','managed-tex','in-place-ai'],data:[{label:'Registered LaTeX folders',service:'LaTeX Studio',uri:'dsh://latex-studio/projects'}],read:async()=>studio.projects.list()};
  const assistance={version:1,kind:'readback',revision:async locator=>(await studio.projects.read(locator?.projectId,locator?.path)).revision};
  ctx.inject(['spaceData'],sub=>sub.effect(()=>{try{return sub.spaceData.registerNative({...nativeView,assistance});}catch{return sub.spaceData.registerNative(nativeView);}}));
 }
