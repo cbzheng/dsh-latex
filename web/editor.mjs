@@ -48,6 +48,14 @@ export function formatText(view,kind){
  });
  view.dispatch({...changes,scrollIntoView:true,userEvent:'input.format',annotations:isolateHistory.of('full')});view.focus();return true;
 }
+const clampTo=(view,x)=>Math.min(Math.max(0,x|0),view.state.doc.length);
+// Only view.viewport is drawn: a range outside it has no DOM (null), so the host asks showRange instead.
+export function viewRange(view,from,to){
+ from=clampTo(view,from);to=clampTo(view,to??from);if(from<view.viewport.from||to>view.viewport.to)return null;
+ try{const a=view.domAtPos(from),b=view.domAtPos(to),r=document.createRange();r.setStart(a.node,a.offset);r.setEnd(b.node,b.offset);return r;}catch{return null;}
+}
+// Scroll a (possibly stale) range into view, centred, without touching selection, focus or the document.
+export function showRange(view,from,to){view.dispatch({effects:EditorView.scrollIntoView(EditorSelection.range(clampTo(view,from),clampTo(view,to??from)),{y:'center'})});}
 const commands=['section','subsection','subsubsection','paragraph','textbf','textit','emph','cite','ref','label','begin','end','include','input','includegraphics','caption','footnote','item','frac','sqrt','alpha','beta','gamma','sum','int'];
 export function mountEditor(parent,{text,onChange,onCompile,onSelection}){
  const listeners=new Set();
@@ -60,6 +68,6 @@ export function mountEditor(parent,{text,onChange,onCompile,onSelection}){
  // In-place AI: subscribe to transactions, apply one undoable edit and expose DOM ranges for reveal.
  const onUpdate=fn=>{listeners.add(fn);return()=>listeners.delete(fn);};
  const replace=(from,to,insert)=>view.dispatch({changes:{from,to,insert},userEvent:'input.assist',annotations:isolateHistory.of('full'),scrollIntoView:true});
- const range=(from,to)=>{const a=view.domAtPos(from),b=view.domAtPos(to),r=document.createRange();r.setStart(a.node,a.offset);r.setEnd(b.node,b.offset);return r;};
- return {view,onUpdate,replace,range,format:kind=>formatText(view,kind),getText:()=>view.state.doc.toString(),setText:next=>{if(next!==view.state.doc.toString())view.dispatch({changes:{from:0,to:view.state.doc.length,insert:next}});},jump:line=>{const n=view.state.doc.line(Math.min(Math.max(1,line),view.state.doc.lines));view.dispatch({selection:{anchor:n.from},effects:EditorView.scrollIntoView(n.from,{y:'center'})});view.focus();},destroy:()=>{listeners.clear();view.destroy();}};
+ const range=(from,to)=>viewRange(view,from,to),show=(from,to)=>showRange(view,from,to);
+ return {view,onUpdate,replace,range,show,format:kind=>formatText(view,kind),getText:()=>view.state.doc.toString(),setText:next=>{if(next!==view.state.doc.toString())view.dispatch({changes:{from:0,to:view.state.doc.length,insert:next}});},jump:line=>{const n=view.state.doc.line(Math.min(Math.max(1,line),view.state.doc.lines));view.dispatch({selection:{anchor:n.from},effects:EditorView.scrollIntoView(n.from,{y:'center'})});view.focus();},destroy:()=>{listeners.clear();view.destroy();}};
 }

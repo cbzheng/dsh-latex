@@ -1,6 +1,6 @@
 {
   "name": "@cbzheng/dsh-latex",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "type": "module",
   "description": "Independent LaTeX source, PDF, managed TeX and Git workspace for DSH",
   "license": "MIT",

@@ -6,6 +6,8 @@ import {tmpdir} from 'node:os';
 import {Studio} from '../src/service.mjs';
 import {diagnostics} from '../src/assist.mjs';
 import {latexAssistProvider,locateLines} from '../web/assist.mjs';
+import {EditorState,EditorSelection} from '@codemirror/state';
+import {viewRange,showRange} from '../web/editor.mjs';
 
 const MAIN='\\documentclass{article}\n\\usepackage{amsmath,graphicx}\n\\newcommand{\\method}{SynthNet}\n\\newcommand\\score[1]{#1}\n\\begin{document}\n\\section{Intro}\nAlpha line.\n% \\usepackage{ignored}\n\\input{body}\n\\bibliography{refs}\n\\end{document}\n';
 async function fixture(t){
@@ -103,4 +105,48 @@ test('other-file edits are found by content after earlier changes moved their li
  assert.equal(locateLines(lines,{from_line:1,to_line:2,expected:'b\ntarget'}),1,'multi-line passages match as whole lines');
  assert.equal(locateLines(lines,{from_line:3,to_line:3,expected:'targ'}),-1,'partial lines never match');
  assert.equal(locateLines(lines,{from_line:9,to_line:9,expected:''}),-1);
+});
+
+test('host review scrolls the open editor to a change without switching files',()=>{
+ let config;const kit={objectSchema:(properties,required)=>({type:'object',properties,required}),textSchema:n=>({type:'string',maxLength:n}),textRangeProvider:c=>(config=c,{version:1})};
+ const calls=[],editor={},fake=(name,text)=>({getText:()=>text,view:{hasFocus:false,state:{selection:{main:{from:0,to:0}}}},show:(from,to)=>calls.push([name,'show',from,to]),jump:line=>calls.push([name,'jump',line]),replace(){},onUpdate:()=>()=>{},range(){}});
+ editor.current=fake('main','a\nb\nc');
+ const live={project:{id:'p',title:'Paper',main:'main.tex',engine:'pdflatex'},file:{path:'main.tex',revision:'r1'}};
+ const env={live,editor,request:async()=>{throw Error('no requests expected');},flush:async()=>true,loadFile:async p=>{calls.push(['load',p]);return true;},refreshFiles:async()=>{}};
+ latexAssistProvider(kit,env);
+ const s=config.session();assert.equal(typeof s.show,'function');
+ s.show(2,5);assert.deepEqual(calls,[['main','show',2,5]],'the session forwards the same offsets to its editor');
+ const [create,edit]=config.extraActions;calls.length=0;
+ assert.equal(edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),false,'a file that is not open stays docked');
+ assert.equal(create.show({path:'new.tex',text:'New'},s),false);
+ assert.deepEqual(calls,[],'nothing scrolled and no file opened');
+ // The edited file is now open in the editor (after open_file): applied, pending and moved changes.
+ live.file={path:'body.tex',revision:'r2'};editor.current=fake('body','One\nTwo\nThree new\nFour\n');
+ assert.equal(edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),true);
+ editor.current=fake('body','One\nTwo\nThree\nFour\n');
+ assert.equal(edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),true);
+ editor.current=fake('body','Zero\nNew\nOne\nTwo\nThree new\nFour\n');
+ assert.equal(edit.show({path:'body.tex',from_line:3,to_line:3,expected:'Three',text:'Three new'},s),true);
+ editor.current=fake('body','One\nTwo\nChanged by hand\nFour\n');
+ assert.equal(edit.show({path:'body.tex',from_line:2,to_line:3,expected:'Two\nThree',text:'Two\nThree new'},s),true);
+ assert.deepEqual(calls,[['body','show',8,17],['body','show',8,13],['body','show',17,26],['body','show',4,23]],'offsets of the passage; selection, focus and file untouched');
+});
+
+test('editor ranges outside the drawn viewport have no DOM; show only scrolls',()=>{
+ let state=EditorState.create({doc:'line one\nline two\nline three',selection:EditorSelection.cursor(3)});const sent=[],seen=[];
+ const view={get state(){return state;},viewport:{from:0,to:9},dispatch:t=>{sent.push(t);state=state.update(t).state;},domAtPos:pos=>(seen.push(pos),{node:'n',offset:pos})};
+ const was=globalThis.document;globalThis.document={createRange:()=>({setStart(n,o){this.start=o;},setEnd(n,o){this.end=o;}})};
+ try{
+  const at=(from,to)=>{const r=viewRange(view,from,to);return r&&[r.start,r.end];};
+  assert.deepEqual(at(2,5),[2,5],'a drawn range keeps its DOM range');
+  assert.equal(viewRange(view,12,20),null,'below the viewport there is no place on screen');
+  assert.equal(viewRange(view,5,20),null,'a range only partly drawn is not on screen either');
+  assert.deepEqual(at(-4,3),[0,3],'offsets are clamped to the document');
+  view.domAtPos=()=>{throw Error('detached');};assert.equal(viewRange(view,1,2),null,'a DOM lookup error means no place');
+ }finally{globalThis.document=was;}
+ showRange(view,12,999);
+ const scroll=[sent[0].effects].flat()[0].value;
+ assert.deepEqual([scroll.range.from,scroll.range.to,scroll.y],[12,state.doc.length,'center'],'stale offsets are clamped and centred');
+ assert.equal(sent[0].selection,undefined);assert.equal(state.selection.main.head,3,'the selection is unchanged');
+ assert.equal(state.doc.toString(),'line one\nline two\nline three','the document is unchanged');
 });

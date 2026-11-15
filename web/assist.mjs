@@ -37,6 +37,8 @@ export function latexAssistProvider(kit,env){
    replace:(from,to,insert)=>handle.replace(from,to,insert),
    onChange:fn=>handle.onUpdate(u=>{if(u.docChanged)fn((pos,assoc)=>u.changes.mapPos(pos,assoc));}),
    domRange:(from,to)=>handle.range(from,to),
+   // Lines outside CodeMirror's viewport have no DOM, so the host asks the editor to scroll.
+   show:(from,to)=>handle.show(from,to),
    async flush(){if(editor.current===handle)await env.flush();},
    async save(){
     if(editor.current===handle){if(!await env.flush())throw Error('保存被拒绝：文件已在外部修改。 / Save refused: the file changed outside this editor.');return {revision:live.file.revision};}
@@ -79,17 +81,31 @@ export function latexAssistProvider(kit,env){
   if(live.project?.id===id&&live.file?.path===p)await env.loadFile(p);
   return saved;
  }
+ // Host review: scroll the open file to the passage an edit_file change speaks of, without
+ // touching selection or focus. Applied changes are found by their new text, pending ones by the
+ // expected text, else the declared lines (clamped). Other files are not opened here.
+ function showLines(args){
+  const handle=editor.current;if(!handle?.show||live.file?.path!==args.path)return false;
+  const lines=handle.getText().split('\n'),count=v=>String(v??'').split('\n').length;
+  let at=locateLines(lines,{...args,expected:args.text}),n=count(args.text);
+  if(at<0){at=locateLines(lines,args);n=count(args.expected);}
+  if(at<0){at=Math.min(Math.max(0,(args.from_line|0)-1),lines.length-1);n=Math.max(1,(args.to_line|0)-at);}
+  const from=lines.slice(0,at).reduce((sum,l)=>sum+l.length+1,0);
+  handle.show(from,from+lines.slice(at,at+n).join('\n').length);return true;
+ }
  const extraActions=[
   {name:'create_file',description:'Create a new text file in this project (fails if it exists). Undo removes it only while unchanged. Add \\input/\\include separately if needed.',
    parameters:o({path,text:text(32000)},['path','text']),
    // Shown in the host's review as a new file's whole text.
    describe:args=>({kind:'text',label:args.path,anchor:'file:'+args.path,arg:['text'],before:'',after:args.text}),
+   show:()=>false,
    async apply(args,s){const saved=await request('write',{projectId:s.projectId,path:args.path,text:args.text,baseRevision:null});await env.refreshFiles();return {projectId:s.projectId,path:args.path,revision:saved.revision};},
    async undo(r){if(live.file?.path===r.path&&live.project?.id===r.projectId){if(!await env.flush())throw changed;await env.loadFile(live.project.main);}await request('remove-created',r).catch(e=>{throw e.status===409?changed:e;});await env.refreshFiles();}},
   {name:'edit_file',description:'Replace whole lines from_line..to_line of another project file (not the captured file; use replace_lines there). expected must equal those lines exactly; read them first.',
    parameters:o({path,from_line:line,to_line:line,expected:text(32000),text:text(32000)},['path','from_line','to_line','expected','text']),
    // One reviewable change per passage: the file path groups them, the expected lines are the "before".
    describe:args=>({kind:'text',label:args.path,anchor:'file:'+args.path+':'+args.from_line,arg:['text'],before:args.expected,after:args.text}),
+   show:args=>showLines(args),
    async apply(args,s){
     if(args.path===s.path)throw Error('请用 replace_lines 修改当前文件。 / Use replace_lines for the captured file.');
     if(live.file?.path===args.path&&!await env.flush())throw changed;
