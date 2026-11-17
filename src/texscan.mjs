@@ -67,7 +67,7 @@ export function scanTex(source,{maxLabels=5000}={}){
    if(/DocumentCommand$/.test(name)){const spec=braceGroup(text,i);if(spec){const parts=spec.text.match(/[mov]|[OD]\{[^{}]*\}|[sd]/g)||[];args=parts.filter(p=>p==='m'||p==='v').length;optional=parts.some(p=>/^[oOdD]/.test(p));}}
    else if(name==='DeclareMathOperator')args=0;
    else{const count=/^\[(\d)\]\s*(\[)?/.exec(text.slice(i,i+40));if(count){args=Number(count[1]);optional=Boolean(count[2]);if(optional)args--;}}
-   result.commands.push({name:command[1],args,...(optional?{optional:true}:{}),line});continue;
+   result.commands.push({name:command[1],args,...(optional?{optional:true}:{}),.../^renew/i.test(name)?{redefined:true}:{},line});continue;
   }
   if(name==='def'){const command=/^\s*\\([a-zA-Z@]+)((?:#\d)*)/.exec(text.slice(after,after+80));if(command&&!command[1].includes('@'))result.commands.push({name:command[1],args:command[2].length/2,line});continue;}
   if(['newenvironment','renewenvironment','NewDocumentEnvironment','newtheorem'].includes(name)){const group=argument(after);if(group&&/^[a-zA-Z@*]+$/.test(group.text.trim()))result.environments.push(group.text.trim());continue;}

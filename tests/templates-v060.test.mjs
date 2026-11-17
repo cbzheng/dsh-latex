@@ -69,6 +69,9 @@ test('templates sync from the publisher, keep a private cache and follow new ver
  // Same bytes under a new ETag only refresh the check.
  routes['resource-cms.springernature.com']=nature('two','"v3"','March 2026');clock.now+=2*DAY;
  assert.equal((await templates.sync('nature')).upstream.fetched,updated.upstream.fetched);
+ // A cache written by an older extraction layout is fetched again instead of being trusted.
+ const file=join(cache,'templates.json'),stored=JSON.parse(await readFile(file,'utf8'));stored.templates.nature.layout=1;await writeFile(file,JSON.stringify(stored));
+ assert.equal((await templates.list()).templates[2].upstream.ready,false);assert.equal((await templates.sync('nature')).upstream.ready,true);
  await assert.rejects(()=>templates.sync('unknown'),/Unknown template/);assert.equal((await templates.sync('article')).id,'article');
 });
 
@@ -98,7 +101,7 @@ test('the ACM class comes from a TeX Live mirror, falling back to the next mirro
  const synced=await templates.sync('acm');assert.equal(synced.upstream.version,'9.9');assert.equal(synced.upstream.origin,'CTAN');
  assert.deepEqual(calls.map(call=>new URL(call[0]).hostname),['mirror.ctan.org','ctan.math.illinois.edu']);
  const blueprint=await templates.blueprint('acm');
- assert.deepEqual(blueprint.files.filter(file=>file.data).map(file=>file.path),['ACM-Reference-Format.bst','acmart.cls','acmnumeric.bbx']);
+ assert.deepEqual(blueprint.files.filter(file=>file.data).map(file=>file.path),['ACM-Reference-Format.bst','acmart.cls']);
  assert.deepEqual(blueprint.template,{id:'acm',version:'9.9'});
 });
 
@@ -112,7 +115,7 @@ test('a new project is created from the chosen template in the familiar layout',
  assert.equal(await readFile(join(plain.root,'main.tex'),'utf8'),SKELETONS.article().files[0].text);
  const acm=await studio.dispatch({action:'create',parent,name:'cscw paper',template:'acm'}); // fetched on first use
  assert.deepEqual(acm.template,{id:'acm',version:'3.1'});assert.equal(acm.main,'main.tex');assert.equal(acm.engine,'pdflatex');
- assert.deepEqual(await listing(acm),['.gitignore','ACM-Reference-Format.bst','Figures','Figures/.gitkeep','Meta','Meta/authors.tex','Meta/ccsxml.tex','Meta/commands.tex','Sections','Sections/01-introduction.tex','Sections/02-related-work.tex','Sections/03-method.tex','Sections/04-findings.tex','Sections/05-discussion.tex','Sections/06-conclusion.tex','Sections/abstract.tex','Sections/ack.tex','Sections/appendix.tex','Tables','Tables/.gitkeep','acmart.cls','acmnumeric.bbx','main.tex','references.bib']);
+ assert.deepEqual(await listing(acm),['.gitignore','ACM-Reference-Format.bst','Figures','Figures/.gitkeep','Meta','Meta/authors.tex','Meta/ccsxml.tex','Meta/commands.tex','Sections','Sections/01-introduction.tex','Sections/02-related-work.tex','Sections/03-method.tex','Sections/04-findings.tex','Sections/05-discussion.tex','Sections/06-conclusion.tex','Sections/abstract.tex','Sections/ack.tex','Sections/appendix.tex','Tables','Tables/.gitkeep','acmart.cls','main.tex','references.bib']);
  const main=await readFile(join(acm.root,'main.tex'),'utf8');
  assert.match(main,/\\documentclass\[manuscript,review,anonymous\]\{acmart\}/);
  for(const name of ['Meta/commands','Meta/authors','Sections/abstract','Meta/ccsxml','Sections/01-introduction','Sections/ack','Sections/appendix'])assert.ok(main.includes('\\input{'+name+'}'),name);
@@ -128,7 +131,7 @@ test('a new project is created from the chosen template in the familiar layout',
  // Every \input target of every skeleton exists, and the files reach the editor and the index.
  for(const p of [acm,nat]){const text=await readFile(join(p.root,'main.tex'),'utf8');for(const match of text.matchAll(/\\input\{([^}]+)\}/g))await access(join(p.root,match[1]+'.tex'));}
  const index=await studio.dispatch({action:'index',projectId:acm.id});
- assert.deepEqual(index.citations.map(entry=>entry.key),['lamport1994latex']);assert.ok(index.labels.some(label=>label.key==='sec:method'));assert.ok(index.commands.some(command=>command.name==='sysname'));
+ assert.deepEqual(index.citations.map(entry=>entry.key),['lamport1994latex']);assert.ok(index.labels.some(label=>label.key==='sec:method'));assert.ok(index.commands.some(command=>command.name==='sysname'));assert.equal(index.commands.find(command=>command.name==='sectionautorefname').redefined,true);
  assert.ok((await studio.dispatch({action:'tree',projectId:acm.id})).files.every(file=>!file.path.endsWith('.gitkeep')),'placeholders stay out of the file tree');
  await assert.rejects(studio.dispatch({action:'create',parent,name:'x',template:'ieee'}),/Unknown template/);await assert.rejects(access(join(parent,'x')));
  await assert.rejects(studio.dispatch({action:'create',parent,name:'plain',template:'acm'}),/EEXIST/);

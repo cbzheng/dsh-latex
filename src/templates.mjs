@@ -5,7 +5,8 @@ import {randomUUID} from 'node:crypto';
 import {atomic,jsonFile,digest,check,serial,run} from './util.mjs';
 import {SKELETONS} from './template-files.mjs';
 
-const MAX_ARCHIVE=8*1024*1024,MAX_FILE=2*1024*1024,MAX_FILES=40,STALE=24*60*60*1000;
+// LAYOUT changes whenever the set of extracted files does, so older caches are fetched again.
+const LAYOUT=2,MAX_ARCHIVE=8*1024*1024,MAX_FILE=2*1024*1024,MAX_FILES=40,STALE=24*60*60*1000;
 const tlnet=['https://mirror.ctan.org/systems/texlive/tlnet','https://ctan.math.illinois.edu/systems/texlive/tlnet','https://mirrors.mit.edu/CTAN/systems/texlive/tlnet'];
 // Publisher files are never shipped with the plugin or kept in its Git history: they are
 // fetched from the publisher's own distribution, cached in private plugin state and copied
@@ -14,7 +15,8 @@ export const TEMPLATES={
  article:{name:'Article',skeleton:'article'},
  acm:{name:'ACM',skeleton:'acm',upstream:{
   label:'acmart',origin:'CTAN',format:'tar.xz',urls:tlnet.map(base=>base+'/archive/acmart.tar.xz'),
-  pick:name=>({'tex/latex/acmart/acmart.cls':'acmart.cls','bibtex/bst/acmart/ACM-Reference-Format.bst':'ACM-Reference-Format.bst','tex/latex/acmart/acmauthoryear.bbx':'acmauthoryear.bbx','tex/latex/acmart/acmauthoryear.cbx':'acmauthoryear.cbx','tex/latex/acmart/acmnumeric.bbx':'acmnumeric.bbx','tex/latex/acmart/acmnumeric.cbx':'acmnumeric.cbx','tex/latex/acmart/acmdatamodel.dbx':'acmdatamodel.dbx'})[name]||null,
+  // The class and the BibTeX style only: the skeleton uses BibTeX, and the biblatex styles would crowd the project root.
+  pick:name=>({'tex/latex/acmart/acmart.cls':'acmart.cls','bibtex/bst/acmart/ACM-Reference-Format.bst':'ACM-Reference-Format.bst'})[name]||null,
   required:['acmart.cls','ACM-Reference-Format.bst'],
   version:files=>{const match=/\\ProvidesClass\{acmart\}\s*\[\s*(\d{4}\/\d{2}\/\d{2})\s+v([\d.]+)/.exec(files.get('acmart.cls').toString('latin1'));check(match,'Unexpected acmart class file',502);return match[2];}
  }},
@@ -59,7 +61,7 @@ async function body(response){
 }
 export class Templates{
  constructor(directory,{fetch=globalThis.fetch,now=()=>Date.now()}={}){this.directory=directory;this.file=join(directory,'templates.json');this.fetch=fetch;this.now=now;this.queue=serial();this.running=new Map();}
- async state(){const value=await jsonFile(this.file,{version:1,templates:{}});check(value.version===1&&value.templates&&typeof value.templates==='object','Invalid template cache');return value;}
+ async state(){const value=await jsonFile(this.file,{version:1,templates:{}});check(value.version===1&&value.templates&&typeof value.templates==='object','Invalid template cache');for(const id of Object.keys(value.templates))if(value.templates[id]?.layout!==LAYOUT)delete value.templates[id];return value;}
  describe(id,entry){
   const spec=TEMPLATES[id],upstream=spec.upstream;
   return {id,name:spec.name,...(upstream?{upstream:{label:upstream.label,origin:upstream.origin,ready:Boolean(entry?.directory),version:entry?.version||'',fetched:entry?.fetched||'',checked:entry?.checked||'',stale:!entry?.checked||this.now()-Date.parse(entry.checked)>STALE,...(entry?.error?{error:entry.error}:{})}}:{})};
@@ -92,7 +94,7 @@ export class Templates{
      const version=upstream.version(files,response)||checked.slice(0,10),directory=id+'-'+sha256.slice(0,16),target=join(this.directory,directory);
      await rm(target,{recursive:true,force:true});
      for(const [name,data] of files){await mkdir(join(target,name,'..'),{recursive:true,mode:0o700});await writeFile(join(target,name),data,{mode:0o600});}
-     const entry=await save({version,sha256,etag:response.headers.get('etag')||'',url,fetched:checked,checked,directory,files:[...files.keys()].sort()});
+     const entry=await save({layout:LAYOUT,version,sha256,etag:response.headers.get('etag')||'',url,fetched:checked,checked,directory,files:[...files.keys()].sort()});
      for(const name of await readdir(this.directory))if(name.startsWith(id+'-')&&name!==directory)await rm(join(this.directory,name),{recursive:true,force:true});
      return entry;
     }finally{await rm(scratch,{recursive:true,force:true});}

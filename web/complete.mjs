@@ -63,13 +63,17 @@ const relativeTo=(directory,path)=>{if(!directory)return path;const base=directo
 const fileOptions=(files,test,map,query)=>{const q=query.toLowerCase(),seen=new Set(),out=[];for(const file of files||[]){if(!test(file.path))continue;const label=map(file.path);if(seen.has(label)||!label.toLowerCase().includes(q))continue;seen.add(label);out.push({label,type:'file',insert:label});}return out.sort((a,b)=>Number(b.label.toLowerCase().startsWith(q))-Number(a.label.toLowerCase().startsWith(q))||a.label.localeCompare(b.label)).slice(0,LIMIT);};
 const nameOptions=(names,query,type)=>{const q=query.toLowerCase(),seen=new Set(),out=[];for(const name of names){if(seen.has(name)||!name.toLowerCase().includes(q))continue;seen.add(name);out.push({label:name,type,insert:name});}return out.sort((a,b)=>Number(b.label.toLowerCase().startsWith(q))-Number(a.label.toLowerCase().startsWith(q))).slice(0,LIMIT);};
 
+// Rare commands that spell the start of a frequent one: typing \sec and Enter should give \section.
+const DEMOTED=new Set(['sec']);
+const STANDARD=new Set([...FREQUENT,...COMMANDS,...Object.values(PACKAGE_COMMANDS).flat()].map(text=>spec(text).name));
 export function commandOptions(index){
  const active=loaded(index),seen=new Set(),options=[];
  const push=(item,extra)=>{if(seen.has(item.label))return;seen.add(item.label);options.push({label:item.label,template:item.template,name:item.name,args:item.args,chain:item.args>0&&CHAINS.test(item.name),type:'keyword',...(SYMBOLS[item.name]&&!item.args?{detail:SYMBOLS[item.name]}:{}),...extra});};
- for(const command of index?.commands||[])push(fromDefinition(command),{type:'function',boost:60,detail:command.path||''});
+ // The project's own macros come first; a redefined standard command keeps its ordinary rank.
+ for(const command of index?.commands||[])push(fromDefinition(command),{type:'function',detail:command.path||'',...(command.redefined||STANDARD.has(command.name)?{}:{boost:60})});
  FREQUENT.forEach((text,order)=>push(spec(text),{boost:40-order}));
  for(const [name,texts] of Object.entries(PACKAGE_COMMANDS))if(active.has(name))for(const text of texts)push(spec(text),COMMON.includes(name)?{}:{boost:10});
- for(const text of COMMANDS)push(spec(text));
+ for(const text of COMMANDS)push(spec(text),DEMOTED.has(spec(text).name)?{boost:-99}:undefined);
  return options;
 }
 // Tables use booktabs rules when the project has them (acmart and sn-jnl load booktabs).

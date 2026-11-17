@@ -22,7 +22,7 @@ export async function completionIndex(projects,projectId,{sources={}}={}){
   total+=text.length;if(total>MAX_TOTAL){index.truncated=true;break;}
   if(kind==='bib'){for(const entry of parseBib(text,{maxEntries:MAX_CITATIONS-index.citations.length}))add('citations',{...entry,path:file.path},entry.key);continue;}
   const scan=scanTex(text,{maxLabels:MAX_LABELS-index.labels.length});
-  for(const command of scan.commands)if(index.commands.length<MAX_COMMANDS)add('commands',{name:command.name,args:command.args,...(command.optional?{optional:true}:{}),path:file.path},command.name);
+  for(const command of scan.commands)if(index.commands.length<MAX_COMMANDS)add('commands',{name:command.name,args:command.args,...(command.optional?{optional:true}:{}),...(command.redefined?{redefined:true}:{}),path:file.path},command.name);
   for(const name of scan.environments)add('environments',name);
   if(kind==='sty')continue;
   for(const label of scan.labels)index.labels.push({...label,path:file.path});

@@ -77,7 +77,11 @@ test('a backslash offers commands: frequent ones first, package commands when lo
  const all=completionAt('Text \\',data);assert.equal(all.kind,'command');assert.equal(all.from,5);assert.ok(all.options.length>300);
  const find=name=>all.options.find(option=>option.name===name);
  assert.ok(find('section').template.includes('${'));assert.ok(find('sysname').boost>find('section').boost,'project macros rank first');
- assert.equal(find('note').label,'\\note[]{}');assert.ok(find('SI'),'siunitx is loaded');
+ assert.equal(find('note').label,'\\note[]{}');
+ assert.ok(find('sec').boost<-90&&find('section').boost>0,'the secant does not outrank \\section');
+ const redefined=completionAt('\\',{index:{...index,commands:scanTex('\\renewcommand{\\sectionautorefname}{Sec.}').commands},files:[]}).options;
+ assert.ok(!(redefined.find(option=>option.name==='sectionautorefname').boost>0),'a redefined standard command is not promoted');
+assert.ok(find('SI'),'siunitx is loaded');
  assert.equal(completionAt('\\',{index:{...index,packages:[]},files:[]}).options.some(option=>option.name==='SI'),false);
  assert.ok(completionAt('\\',{}).options.some(option=>option.name==='includegraphics'),'common packages need no index');
  assert.equal(completionAt('line break \\\\',data),null);assert.equal(completionAt('\\href{',data),null);
