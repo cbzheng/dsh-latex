@@ -64,6 +64,53 @@ the process group, including helper children. Destinations are exclusively creat
 and never recursively removed on failure; pre-existing folders are refused. Browser
 reload can reattach, while Host restart requires inspection of a preserved folder.
 
+## Completion
+
+The editor completes from two sources. Static knowledge (web/latex-data.mjs) lists
+LaTeX commands, symbols, environments, packages, classes and bibliography styles;
+commands of a package are offered once the project loads it, a few ubiquitous
+packages always. Project knowledge is the `index` action (src/completion.mjs): one
+bounded read of every .tex, .sty and .bib file returning labels with their kind and
+caption or heading, bibliography entries (key, title, authors, year, venue),
+project-defined commands and environments, loaded packages and graphics paths. The
+scanner (src/texscan.mjs) is pure and shared: the editor rescans the open file on
+every change and overlays it on the host index, so a label or entry typed a second
+ago completes before it is saved. The index is refreshed after saves and file
+changes; it is read-only and also available to the Agent tool.
+
+web/complete.mjs decides what the text before the caret asks for: a command after
+an odd number of backslashes, a citation key inside any `cite` command (ranked
+across key, author, title, year and venue, several words allowed), a label inside
+`ref` commands, an environment after `\begin{` (inserted with its body and
+`\end`, unless an unmatched `\end` already waits) or `\end{` (innermost open
+environment first), packages, classes, bibliography styles and project file paths
+(images honour `\graphicspath`). It has no DOM dependency and is tested directly.
+
+## Templates
+
+A template is a skeleton (src/template-files.mjs) plus, for publisher templates,
+the publisher's own class and bibliography style files. Those files are not part of
+this repository or the package. src/templates.mjs fetches them over HTTPS from the
+publisher's distribution: `acmart` from the TeX Live package archive on a CTAN
+mirror (generated class files, with mirror fallback), `sn-jnl` from Springer
+Nature's template package. Downloads are size-bounded; only an allow-list of
+members is extracted (tar listing checked before extraction, zip members read
+from the central directory), the class file must identify itself, and a verified
+copy replaces the previous one. The cache lives in private plugin state with its
+version, SHA-256 and ETag.
+
+Sync happens when a template is chosen in the new-paper dialog and its last check is
+over a day old (conditional request where the source supports it), on the dialog's
+check button, and on first use; there is no background timer. A failed check keeps
+the cached copy and reports the source as offline; with nothing cached, creation
+fails before any folder is made. New projects copy the current files and the
+registry records the template id and version. Existing projects are never changed:
+their class files are ordinary project files under the author's control.
+
+All skeletons share one layout: a short main.tex that only wires the paper together,
+Meta/ (packages and macros, authors, front matter), Sections/ with one numbered file
+per section, Figures/, Tables/ and references.bib.
+
 ## Outline and PDF rendering
 
 The read-only outline scanner follows the configured main's input/include graph,

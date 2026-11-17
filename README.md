@@ -7,6 +7,10 @@ Source on the left, PDF on the right, your paper stays an ordinary Git folder.
 
 - **Write**: CodeMirror editor with LaTeX highlighting, autosave with revision
   checks, and one-click bold, italic, itemize, enumerate and figure.
+- **Complete**: type `\` for commands (with the project's own macros and the
+  packages it loads), `\cite{` to pick a reference by title, author or year
+  from the `.bib` files, `\ref{` to pick a label by caption or section title,
+  `\begin{` to get the whole environment, plus packages, classes and file paths.
 - **Compile**: a private, checksum-pinned TinyTeX prepared on first use. Missing
   packages are fetched on demand. pdfLaTeX, XeLaTeX and LuaLaTeX via latexmk,
   BibTeX and Biber included. Builds run when you ask, plus every 5 minutes if
@@ -18,6 +22,10 @@ Source on the left, PDF on the right, your paper stays an ordinary Git folder.
   and `gh` login is reused; no tokens are collected.
 - **Import**: open any folder (an Overleaf export works), create a new paper, or
   clone a GitHub repository with live progress.
+- **Templates**: start a paper as blank, ACM (`acmart`) or Nature (`sn-jnl`).
+  Class and bibliography style files are fetched from the publisher and kept
+  current, so a new paper starts on the latest version, in one layout:
+  a short `main.tex`, `Meta/`, `Sections/`, `Figures/`, `Tables/`.
 - **Look**: macOS-style glass interface in light and dark, usable on a phone.
 
 ![Git view in dark mode: changes with inline diff and commit timeline](.github/readme/git-dark.png)
@@ -56,6 +64,7 @@ npm test                       # portable backend and UI-logic tests
 npm run build                  # installable archive in dist/ (or $LATEX_BUILD_DIR)
 node scripts/dev.mjs           # loopback dev server with synthetic data
 node scripts/integration.mjs   # real TeX and Git acceptance on temporary documents
+node scripts/templates.mjs     # fetch each publisher template and compile it (network)
 ```
 
 `LATEX_STUDIO_DATA` overrides where private plugin state is kept. Tests and

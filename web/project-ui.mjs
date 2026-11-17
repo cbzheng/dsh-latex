@@ -12,3 +12,5 @@ export function fileTree(files){
 export function parentFolders(path){const parts=path.split('/');return parts.slice(0,-1).map((_,i)=>parts.slice(0,i+1).join('/'));}
 export function bytesLabel(bytes){if(!Number.isFinite(bytes))return '';if(bytes<1024)return Math.round(bytes)+' B';if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KiB';return (bytes/(1024*1024)).toFixed(1)+' MiB';}
 export function progressValue(progress){if(Number.isFinite(progress?.percent))return Math.min(100,Math.max(0,progress.percent));if(progress?.totalBytes>0&&Number.isFinite(progress.receivedBytes))return Math.min(100,Math.max(0,100*progress.receivedBytes/progress.totalBytes));return undefined;}
+// One line for the chosen template: what the publisher currently ships, or what is happening.
+export function templateStatus(upstream,syncing,t){if(syncing)return t.templateSyncing;if(!upstream.ready)return upstream.error?t.templateOffline:t.templateMissing;return [upstream.label,/^\d/.test(upstream.version)&&upstream.version.length<8?'v'+upstream.version:upstream.version,upstream.error?t.templateOffline:''].filter(Boolean).join(' · ');}

@@ -4,6 +4,7 @@ import {homedir} from 'node:os';
 import {randomUUID} from 'node:crypto';
 import {atomic,jsonFile,digest,check,serial,run} from './util.mjs';
 import {CloneJobs} from './clone.mjs';
+import {SKELETONS} from './template-files.mjs';
 
 export const ENGINES=['pdflatex','xelatex','lualatex'];
 export const TEXT=/(?:\.(tex|bib|sty|cls|bst|txt|md|json|ya?ml|csv|tsv)|\.gitignore|\.gitattributes)$/i;
@@ -26,7 +27,7 @@ export class Projects{
  async list(){await this.ready;return {projects:this.value.projects.map(p=>({...p}))};}
  async get(id){await this.ready;const p=this.value.projects.find(p=>p.id===id);check(p,'Unknown project',404);check(await realpath(p.root)===p.root,'Project folder moved',409);return p;}
  async saveRegistry(){await atomic(this.file,JSON.stringify(this.value,null,2));}
- async open(path){return this.queue(async()=>{
+ async open(path,{template}={}){return this.queue(async()=>{
   await this.ready;check(typeof path==='string'&&isAbsolute(path),'Choose an absolute folder');const root=await realpath(path);check((await stat(root)).isDirectory(),'Choose a folder');
   let p=this.value.projects.find(p=>p.root===root);if(p)return {...p};
   check(this.value.projects.length<100,'Project limit reached');
@@ -34,6 +35,7 @@ export class Projects{
   p.mainCandidates=await this.mainCandidatesAt(root,await this.treeAt(root));
   p.main=p.mainCandidates[0]||'main.tex';
   try{const source=await readFile(join(root,p.main),'utf8');const magic=source.match(/^%\s*!TEX\s+program\s*=\s*(pdflatex|xelatex|lualatex)/im);if(magic)p.engine=magic[1];else if(/\\(?:usepackage(?:\[[^\]]*\])?\{(?:fontspec|xeCJK)\}|documentclass(?:\[[^\]]*\])?\{ctex)/.test(source))p.engine='xelatex';}catch{}
+  if(template)p.template={id:template.id,version:template.version};
   this.value.projects.push(p);await this.saveRegistry();return {...p};
  });}
  async configure(id,changes){return this.queue(async()=>{const p=await this.get(id),next={...p};if(changes.main!==undefined){relativePath(changes.main);check(/\.tex$/i.test(changes.main),'Main file must be .tex');const file=await confined(p.root,changes.main);check((await stat(file)).isFile(),'Main file must be a regular .tex file');next.main=changes.main;}if(changes.engine!==undefined){check(ENGINES.includes(changes.engine),'Unknown engine');next.engine=changes.engine;}if(changes.brief!==undefined){check(typeof changes.brief==='string'&&changes.brief.length<=8000,'Project brief is limited to 8000 characters');if(changes.brief.trim())next.brief=changes.brief;else delete next.brief;}for(const key of ['online','autoCompile'])if(changes[key]!==undefined){check(typeof changes[key]==='boolean','Invalid setting');next[key]=changes[key];}if(changes.compileInterval!==undefined){check(Number.isInteger(changes.compileInterval)&&changes.compileInterval>=0&&changes.compileInterval<=120,'Build interval must be 0–120 minutes');next.compileInterval=changes.compileInterval;}if(!('brief' in next))delete p.brief;Object.assign(p,next);await this.saveRegistry();return {...p};});}
@@ -68,7 +70,14 @@ export class Projects{
  async folder(path=homedir()){
   check(typeof path==='string'&&isAbsolute(path),'Invalid folder');const root=await realpath(path);const entries=await readdir(root,{withFileTypes:true});return {path:root,parent:dirname(root),folders:entries.filter(e=>e.isDirectory()&&!internal(e.name)).slice(0,250).map(e=>({name:e.name,path:join(root,e.name)}))};
  }
- async create(parent,name){check(/^[\p{L}\p{N} _.-]{1,80}$/u.test(name)&&!name.startsWith('.'),'Invalid project name');const base=await realpath(parent),root=join(base,name);await mkdir(root,{mode:0o700});try{await writeFile(join(root,'main.tex'),'\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\title{A new paper}\n\\author{}\n\\date{}\n\\begin{document}\n\\maketitle\n\n\\section{Introduction}\nStart writing here.\n\n\\end{document}\n');await writeFile(join(root,'.gitignore'),'*.aux\n*.log\n*.out\n*.synctex.gz\n');const result=await run('git',['init','-b','main'],{cwd:root});check(result.code===0,'Git is unavailable');return await this.open(root);}catch(e){/* Preserve the newly created folder for recovery. */throw e;}}
+ // blueprint: {files:[{path,text|data}],template?} from src/templates.mjs.
+ async create(parent,name,blueprint=SKELETONS.article()){
+  check(/^[\p{L}\p{N} _.-]{1,80}$/u.test(name)&&!name.startsWith('.'),'Invalid project name');const base=await realpath(parent),root=join(base,name);await mkdir(root,{mode:0o700});
+  /* A failure leaves the new folder in place for recovery. */
+  for(const file of blueprint.files){relativePath(file.path.replace(/\/\.gitkeep$/,'/keep'));/* placeholder keeps an empty folder in Git */const target=join(root,file.path);await mkdir(dirname(target),{recursive:true,mode:0o700});await writeFile(target,file.data??file.text,{flag:'wx',mode:0o644});}
+  const result=await run('git',['init','-b','main'],{cwd:root});check(result.code===0,'Git is unavailable');
+  return this.open(root,{template:blueprint.template});
+ }
  async clone(parent,name,url){
   const job=await this.clones.start(parent,name,url);return this.clones.wait(job.id);
  }

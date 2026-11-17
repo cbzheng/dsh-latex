@@ -6,21 +6,27 @@ import {Git} from './git.mjs';
 import {outlineProject} from './outline.mjs';
 import {repositoryInfo} from './repository.mjs';
 import {check,redact} from './util.mjs';
+import {completionIndex} from './completion.mjs';
+import {Templates} from './templates.mjs';
 import {projectContext,readRange,search,diagnostics,proposeEdit,removeCreated} from './assist.mjs';
 
 export class Studio{
- constructor(directory){this.projects=new Projects(directory);this.compiler=new Compiler(this.projects);this.git=new Git(this.projects);}
+ constructor(directory,{fetch}={}){this.projects=new Projects(directory);this.templates=new Templates(join(directory,'templates'),{fetch});this.compiler=new Compiler(this.projects);this.git=new Git(this.projects);}
  async dispatch(args,{user=true}={}){
   const {action,projectId}=args;check(typeof action==='string','Action required');
   if(action==='repo-info'){check(user,'Only the user can import repositories',403);return repositoryInfo(args.url);}
   if(action==='projects')return {...await this.projects.list(),runtime:await this.compiler.runtime.status()};
   if(action==='open'){check(user,'Only the user can register project folders',403);return this.projects.open(args.path);}
   if(action==='folders'){check(user,'Only the user can browse host folders',403);return this.projects.folder(args.path);}
-  if(action==='create'||action==='clone'){check(user,'Only the user can create projects',403);return this.projects[action](args.parent,args.name,...(action==='clone'?[args.url]:[]));}
+  if(action==='templates')return this.templates.list();
+  if(action==='template-sync'){check(user,'Only the user can update templates',403);return this.templates.sync(args.template,{force:args.force===true});}
+  if(action==='create'){check(user,'Only the user can create projects',403);return this.projects.create(args.parent,args.name,await this.templates.blueprint(args.template||'article'));}
+  if(action==='clone'){check(user,'Only the user can create projects',403);return this.projects.clone(args.parent,args.name,args.url);}
   if(action==='clone-start'){check(user,'Only the user can import repositories',403);return this.projects.clones.start(args.parent,args.name,args.url);}
   if(action==='clone-job'){check(user,'Only the user can inspect clone jobs',403);return this.projects.clones.status(args.id);}
   if(action==='clone-cancel'){check(user,'Only the user can cancel clone jobs',403);return this.projects.clones.cancel(args.id);}
   if(action==='outline')return outlineProject(this.projects,projectId,{sources:args.sources||{}});
+  if(action==='index')return completionIndex(this.projects,projectId,{sources:args.sources||{}});
   if(action==='tree')return this.projects.tree(projectId);
   if(action==='read')return args.fromLine!==undefined||args.toLine!==undefined?readRange(this.projects,projectId,args.path,args.fromLine,args.toLine):this.projects.read(projectId,args.path);
   if(action==='context')return projectContext(this.projects,projectId);
